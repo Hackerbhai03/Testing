@@ -36,6 +36,8 @@ class Config:
         self.AUDIO_BACKEND = getenv("AUDIO_BACKEND", "native").lower()
         if self.AUDIO_BACKEND not in ("native", "ffmpeg"):
             self.AUDIO_BACKEND = "native"
+        # Stream quality sent to the voice chat: STUDIO (best) / HIGH / MEDIUM / LOW.
+        self.AUDIO_QUALITY = getenv("AUDIO_QUALITY", "STUDIO").upper()
         # Max size of the downloads/ cache in MB (oldest unused files are deleted). 0 = unlimited.
         self.CACHE_LIMIT_MB = int(getenv("CACHE_LIMIT_MB", 300))
 
