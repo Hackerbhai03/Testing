@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 
 DOWNLOAD_DIR = "downloads"
-AUDIO_EXTS = ("webm", "opus", "m4a", "ogg")
+AUDIO_EXTS = ("webm", "opus", "m4a", "ogg", "mp3")
 VIDEO_EXTS = ("mp4",)
 _PARTIAL = (".part", ".ytdl", ".temp")
 
