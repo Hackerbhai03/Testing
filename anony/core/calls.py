@@ -4,6 +4,7 @@
 
 
 import asyncio
+import time
 
 from ntgcalls import (ConnectionNotFound, TelegramServerError,
                       RTMPStreamingUnsupported, ConnectionError,
@@ -23,6 +24,7 @@ class TgCall(PyTgCalls):
     def __init__(self):
         self.clients = []
         self._bg = set()
+        self._started = {}
 
     def _spawn(self, coro) -> None:
         task = asyncio.create_task(coro)
@@ -36,6 +38,36 @@ class TgCall(PyTgCalls):
         except Exception as ex:
             logger.warning("Thumbnail failed: %s", ex)
         return config.DEFAULT_THUMB
+
+    @staticmethod
+    def _ffmpeg_args(media: Media | Track, seek_time: int) -> str | None:
+        args = []
+        if str(media.file_path).startswith("http"):
+            # Keep a network stream alive through short hiccups (no gaps / mic flicker).
+            args += ["-reconnect 1", "-reconnect_streamed 1", "-reconnect_delay_max 5"]
+        if seek_time > 1:
+            args.append(f"-ss {seek_time}")
+        return " ".join(args) or None
+
+    async def _url_failed(self, chat_id: int) -> bool:
+        """A stream URL that ends within seconds is broken: switch this track to a file download."""
+        media = queue.get_current(chat_id)
+        started = self._started.get(chat_id)
+        if (
+            not media
+            or not str(media.file_path).startswith("http")
+            or started is None
+            or time.monotonic() - started > 8
+            or media.duration_sec < 30
+        ):
+            return False
+        yt.url_failures += 1
+        logger.warning("Stream URL failed for %s, falling back to download.", media.id)
+        media.file_path = await yt.download_file(media.id, video=media.video)
+        if media.file_path:
+            await self.replay(chat_id)
+            return True
+        return False
 
     async def prefetch(self, chat_id: int) -> None:
         """Download the next queued track in the background so it starts instantly."""
@@ -104,8 +136,9 @@ class TgCall(PyTgCalls):
                 if media.video
                 else types.MediaStream.Flags.IGNORE
             ),
-            ffmpeg_parameters=f"-ss {seek_time}" if seek_time > 1 else None,
+            ffmpeg_parameters=self._ffmpeg_args(media, seek_time),
         )
+        self._started[chat_id] = time.monotonic()
         try:
             await client.play(
                 chat_id=chat_id,
@@ -226,6 +259,8 @@ class TgCall(PyTgCalls):
         async def update_handler(_, update: types.Update) -> None:
             if isinstance(update, types.StreamEnded):
                 if update.stream_type == types.StreamEnded.Type.AUDIO:
+                    if await self._url_failed(update.chat_id):
+                        return
                     await self.play_next(update.chat_id)
             elif isinstance(update, types.ChatUpdate):
                 if update.status in [
