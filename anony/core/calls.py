@@ -4,6 +4,7 @@
 
 
 import asyncio
+import random
 import time
 
 from ntgcalls import (ConnectionNotFound, TelegramServerError,
@@ -69,6 +70,26 @@ class TgCall(PyTgCalls):
             return True
         return False
 
+    async def _start_vc(self, chat_id: int) -> bool:
+        """Create the voice chat if it is off. Needs 'Manage video chats' admin right (bot or assistant)."""
+        from pyrogram.raw import functions
+
+        for cl in (app, await db.get_client(chat_id)):
+            try:
+                peer = await cl.resolve_peer(chat_id)
+                await cl.invoke(
+                    functions.phone.CreateGroupCall(
+                        peer=peer, random_id=random.getrandbits(31)
+                    )
+                )
+                await asyncio.sleep(1)
+                return True
+            except Exception as ex:
+                if "ALREADY" in str(ex).upper():
+                    return True
+                logger.warning("Could not start VC in %s: %s", chat_id, ex)
+        return False
+
     async def prefetch(self, chat_id: int) -> None:
         """Download the next queued track in the background so it starts instantly."""
         nxt = queue.get_next(chat_id, check=True)
@@ -109,6 +130,7 @@ class TgCall(PyTgCalls):
         message: Message,
         media: Media | Track,
         seek_time: int = 0,
+        _retry: bool = True,
     ) -> None:
         client = await db.get_assistant(chat_id)
         _lang = await lang.get_lang(chat_id)
@@ -187,6 +209,10 @@ class TgCall(PyTgCalls):
             await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
             await self.play_next(chat_id)
         except exceptions.NoActiveGroupCall:
+            if _retry and await self._start_vc(chat_id):
+                return await self.play_media(
+                    chat_id, message, media, seek_time, _retry=False
+                )
             await self.stop(chat_id)
             await message.edit_text(_lang["error_no_call"])
         except exceptions.NoAudioSourceFound:
