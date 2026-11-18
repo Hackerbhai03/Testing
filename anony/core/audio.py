@@ -82,8 +82,8 @@ def find_cached(video_id: str, video: bool = False) -> str | None:
 
 def prune(limit_mb: int, protected: set[str], grace: int = 600) -> int:
     """
-    Delete least-recently-used files until downloads/ fits in limit_mb.
-    Files in protected (queued/playing) and files touched in the last grace
+    Delete least-recently-used files until downloads/ fits in `limit_mb`.
+    Files in `protected` (queued/playing) and files touched in the last `grace`
     seconds are never removed. Returns the number of files deleted.
     """
     if limit_mb <= 0:
